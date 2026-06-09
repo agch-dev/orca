@@ -72,9 +72,13 @@ Orca supports any CLI agent (_not just this list_).
 - **No login required** — Bring your own Claude Code, OpenClaude, Codex, Grok, or Antigravity subscription.
 - **Worktree-native** — Every feature gets its own worktree. No stashing, no branch juggling. Spin up and switch instantly.
 - **Multi-agent terminals** — Run multiple AI agents side-by-side in tabs and panes. See which ones are active at a glance.
+- **Agent-ready browser** — Open local apps, inspect pages, annotate UI, and hand precise browser context to agents.
+- **Design Mode** — Iterate on frontend changes with an embedded browser built for visual review and quick fixes.
 - **Built-in source control** — Review AI-generated diffs, make quick edits, and commit without leaving Orca.
 - **GitHub integration** — PRs, issues, and Actions checks linked to each worktree automatically.
 - **SSH support** — Connect to remote machines and run agents on them directly from Orca.
+- **Computer Use** — Let agents operate desktop apps and visible UI when a workflow needs real interaction.
+- **Mobile companion** — Monitor and steer agents from your phone, with emulator-friendly mobile workflows.
 - **Notifications** — Know when an agent finishes or needs attention. Mark threads unread to come back later.
 
 ---

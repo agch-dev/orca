@@ -488,6 +488,11 @@ const WorktreeCard = React.memo(function WorktreeCard({
         event.stopPropagation()
         return
       }
+      if (isDeleting) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       // Why: route sidebar clicks through the shared activation path so the
       // back/forward stack stays complete for the primary worktree navigation
       // surface instead of only recording palette-driven switches.
@@ -498,7 +503,14 @@ const WorktreeCard = React.memo(function WorktreeCard({
       }
       onActivate?.()
     },
-    [worktree.id, isSshDisconnected, onActivate, onImmediateActivate, onSelectionGesture]
+    [
+      worktree.id,
+      isDeleting,
+      isSshDisconnected,
+      onActivate,
+      onImmediateActivate,
+      onSelectionGesture
+    ]
   )
 
   const handleRenameTitle = useCallback(

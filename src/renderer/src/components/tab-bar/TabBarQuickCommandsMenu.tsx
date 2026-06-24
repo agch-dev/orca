@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Pencil, Play, Trash2 } from 'lucide-react'
+import { ChevronDown, Play } from 'lucide-react'
 import {
   Command,
   CommandEmpty,
   CommandInput,
-  CommandItem,
   CommandList,
   CommandSeparator
 } from '@/components/ui/command'
@@ -19,7 +18,8 @@ import {
   isTerminalAgentQuickCommand
 } from '../../../../shared/terminal-quick-commands'
 import type { TerminalQuickCommand } from '../../../../shared/types'
-import { AgentIcon, getAgentLabel } from '@/lib/agent-catalog'
+import { getAgentLabel } from '@/lib/agent-catalog'
+import { TabBarQuickCommandItem } from './TabBarQuickCommandItem'
 import { cn } from '@/lib/utils'
 import { translate } from '@/i18n/i18n'
 import {
@@ -29,6 +29,7 @@ import {
 import { keybindingMatchesAction } from '../../../../shared/keybindings'
 import { getShortcutPlatform } from '@/lib/shortcut-platform'
 import { useAppStore } from '@/store'
+import { useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
 type TabBarQuickCommandsMenuProps = {
   repoCommands: readonly TerminalQuickCommand[]
   globalCommands: readonly TerminalQuickCommand[]
@@ -37,6 +38,9 @@ type TabBarQuickCommandsMenuProps = {
   onDeleteCommand: (command: TerminalQuickCommand) => void
   onEditCommand: (command: TerminalQuickCommand) => void
   onRunCommand: (command: TerminalQuickCommand) => void
+}
+function withShortcutHint(label: string, shortcutLabel: string | null): string {
+  return shortcutLabel ? `${label} (${shortcutLabel})` : label
 }
 export function TabBarQuickCommandsMenu({
   repoCommands,
@@ -48,6 +52,7 @@ export function TabBarQuickCommandsMenu({
   onRunCommand
 }: TabBarQuickCommandsMenuProps): React.JSX.Element {
   const keybindings = useAppStore((s) => s.keybindings)
+  const openMenuShortcutLabel = useOptionalShortcutLabel('tab.openQuickCommandsMenu')
   const [menuOpen, setMenuOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [commandValueOverride, setCommandValueOverride] = useState<string | null>(null)
@@ -191,72 +196,14 @@ export function TabBarQuickCommandsMenu({
     },
     [commandValue, filteredVisibleCommands, runAndClose, selectedCommand]
   )
+  const moreCommandsLabel = translate(
+    'auto.components.tab.bar.TabBarQuickCommandsButton.b82e237a4b',
+    'More quick commands'
+  )
   const splitButtonClass =
     'my-auto flex h-7 shrink-0 items-stretch overflow-hidden rounded-md border border-border/60 text-muted-foreground'
   const innerButtonBase =
     'flex items-center bg-transparent leading-none text-muted-foreground hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
-  const renderItem = (command: TerminalQuickCommand): React.JSX.Element => (
-    <CommandItem
-      key={command.id}
-      value={command.id}
-      onSelect={() => runAndClose(command)}
-      className="group/qc mx-1 my-0.5 items-center gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
-    >
-      {isTerminalAgentQuickCommand(command) ? (
-        <span className="shrink-0 text-muted-foreground">
-          <AgentIcon agent={command.agent} size={12} />
-        </span>
-      ) : (
-        <Play
-          className="size-3 shrink-0 text-muted-foreground"
-          fill="currentColor"
-          strokeWidth={0}
-        />
-      )}
-      <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium text-foreground">{command.label}</span>
-        <span className="block truncate font-mono text-[11px] text-muted-foreground">
-          {isTerminalAgentQuickCommand(command)
-            ? `${getAgentLabel(command.agent)}: ${command.prompt}`
-            : command.command}
-        </span>
-      </span>
-      <span className="flex shrink-0 items-center gap-0.5 can-hover:opacity-0 transition-opacity group-hover/qc:opacity-100 group-data-[selected=true]/qc:opacity-100">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            setMenuOpen(false)
-            onEditCommand(command)
-          }}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-          aria-label={translate(
-            'auto.components.tab.bar.TabBarQuickCommandsButton.15529ede69',
-            'Edit {{value0}}',
-            { value0: command.label }
-          )}
-        >
-          <Pencil className="size-3" />
-        </button>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation()
-            setMenuOpen(false)
-            onDeleteCommand(command)
-          }}
-          className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
-          aria-label={translate(
-            'auto.components.tab.bar.TabBarQuickCommandsButton.196593b6a9',
-            'Remove {{value0}}',
-            { value0: command.label }
-          )}
-        >
-          <Trash2 className="size-3" />
-        </button>
-      </span>
-    </CommandItem>
-  )
   return (
     <div className={splitButtonClass}>
       <Tooltip>
@@ -309,26 +256,33 @@ export function TabBarQuickCommandsMenu({
         </TooltipContent>
       </Tooltip>
       <DropdownMenu modal={false} open={menuOpen} onOpenChange={handleOpenChange}>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className={cn(
-              innerButtonBase,
-              'justify-center rounded-l-none rounded-r-md border-l border-border/60 px-1'
-            )}
-            aria-label={translate(
-              'auto.components.tab.bar.TabBarQuickCommandsButton.b82e237a4b',
-              'More quick commands'
-            )}
-          >
-            <ChevronDown className="size-3" strokeWidth={2.5} />
-          </button>
-        </DropdownMenuTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  innerButtonBase,
+                  'justify-center rounded-l-none rounded-r-md border-l border-border/60 px-1'
+                )}
+                aria-label={moreCommandsLabel}
+              >
+                <ChevronDown className="size-3" strokeWidth={2.5} />
+              </button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={6}>
+            {withShortcutHint(moreCommandsLabel, openMenuShortcutLabel)}
+          </TooltipContent>
+        </Tooltip>
         <DropdownMenuContent
           align="end"
           side="bottom"
           sideOffset={6}
           className="w-72 p-0"
+          // Why: prevent Radix from returning focus to the chevron trigger on
+          // close, which would surface the tooltip unintentionally.
+          onCloseAutoFocus={(e) => e.preventDefault()}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' || showSearch || filteredVisibleCommands.length !== 1) {
               return
@@ -379,11 +333,39 @@ export function TabBarQuickCommandsMenu({
                       )}
                 </CommandEmpty>
               ) : null}
-              {filteredRepoCommands.map(renderItem)}
+              {filteredRepoCommands.map((command) => (
+                <TabBarQuickCommandItem
+                  key={command.id}
+                  command={command}
+                  onRun={() => runAndClose(command)}
+                  onEdit={() => {
+                    setMenuOpen(false)
+                    onEditCommand(command)
+                  }}
+                  onDelete={() => {
+                    setMenuOpen(false)
+                    onDeleteCommand(command)
+                  }}
+                />
+              ))}
               {filteredRepoCommands.length > 0 && filteredGlobalCommands.length > 0 ? (
                 <CommandSeparator className="my-1" />
               ) : null}
-              {filteredGlobalCommands.map(renderItem)}
+              {filteredGlobalCommands.map((command) => (
+                <TabBarQuickCommandItem
+                  key={command.id}
+                  command={command}
+                  onRun={() => runAndClose(command)}
+                  onEdit={() => {
+                    setMenuOpen(false)
+                    onEditCommand(command)
+                  }}
+                  onDelete={() => {
+                    setMenuOpen(false)
+                    onDeleteCommand(command)
+                  }}
+                />
+              ))}
             </CommandList>
             <div className="border-t border-border/50 p-1">
               <button

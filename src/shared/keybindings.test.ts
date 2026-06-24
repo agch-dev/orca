@@ -456,6 +456,38 @@ describe('keybindings', () => {
     )
   })
 
+  it('keeps the quick commands menu toggle unassigned until users customize it', () => {
+    const platforms: readonly KeybindingPlatform[] = ['darwin', 'linux', 'win32']
+
+    for (const platform of platforms) {
+      expect(getEffectiveKeybindingsForAction('tab.openQuickCommandsMenu', platform)).toEqual([])
+    }
+
+    const binding = {
+      key: 'q',
+      code: 'KeyQ',
+      control: true,
+      meta: false,
+      alt: false,
+      shift: true
+    }
+
+    expect(keybindingMatchesAction('tab.openQuickCommandsMenu', binding, 'linux')).toBe(false)
+    expect(
+      keybindingMatchesAction('tab.openQuickCommandsMenu', binding, 'linux', {
+        'tab.openQuickCommandsMenu': ['Mod+Shift+Q']
+      })
+    ).toBe(true)
+
+    const definition = getKeybindingDefinition('tab.openQuickCommandsMenu')
+    expect(definition?.title).toBe('Toggle Quick Commands menu')
+    expect(definition?.group).toBe('Quick Commands')
+    expect(definition?.scope).toBe('tabs')
+    expect(definition?.searchKeywords).toEqual(
+      expect.arrayContaining(['shortcut', 'quick', 'command', 'menu', 'tab'])
+    )
+  })
+
   it('keeps the sleeping-workspaces toggle unassigned until users customize it', () => {
     const binding = {
       key: 's',

@@ -77,6 +77,7 @@ export type KeybindingActionId =
   | 'tab.nextTerminal'
   | 'tab.previousTerminal'
   | 'tab.selectByIndex'
+  | 'tab.openQuickCommandsMenu'
   | 'browser.find'
   | 'browser.back'
   | 'browser.forward'
@@ -700,6 +701,14 @@ export const KEYBINDING_DEFINITIONS: readonly KeybindingDefinition[] = [
       linux: ['Alt+1'],
       win32: ['Alt+1']
     }
+  },
+  {
+    id: 'tab.openQuickCommandsMenu',
+    title: 'Toggle Quick Commands menu',
+    group: 'Quick Commands',
+    scope: 'tabs',
+    searchKeywords: ['shortcut', 'quick', 'command', 'menu', 'tab', 'group', 'toggle'],
+    defaultBindings: platformBindings([])
   },
   {
     id: 'browser.find',

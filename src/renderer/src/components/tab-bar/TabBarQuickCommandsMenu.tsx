@@ -26,6 +26,9 @@ import {
   getTerminalQuickCommandPickerValue,
   searchTerminalQuickCommands
 } from '@/lib/terminal-quick-command-search'
+import { keybindingMatchesAction } from '../../../../shared/keybindings'
+import { getShortcutPlatform } from '@/lib/shortcut-platform'
+import { useAppStore } from '@/store'
 type TabBarQuickCommandsMenuProps = {
   repoCommands: readonly TerminalQuickCommand[]
   globalCommands: readonly TerminalQuickCommand[]
@@ -44,6 +47,7 @@ export function TabBarQuickCommandsMenu({
   onEditCommand,
   onRunCommand
 }: TabBarQuickCommandsMenuProps): React.JSX.Element {
+  const keybindings = useAppStore((s) => s.keybindings)
   const [menuOpen, setMenuOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [commandValueOverride, setCommandValueOverride] = useState<string | null>(null)
@@ -111,6 +115,23 @@ export function TabBarQuickCommandsMenu({
     setQuery('')
     setCommandValueOverride(null)
   }
+  // Why: this component only mounts while its tab group is focused, so the
+  // listener naturally scopes to the active group with no coordination needed.
+  useEffect(() => {
+    const platform = getShortcutPlatform()
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!keybindingMatchesAction('tab.openQuickCommandsMenu', e, platform, keybindings)) {
+        return
+      }
+      e.preventDefault()
+      e.stopImmediatePropagation()
+      setMenuOpen((prev) => !prev)
+    }
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, { capture: true })
+    }
+  }, [keybindings])
   useEffect(() => {
     if (!menuOpen || !showSearch) {
       return

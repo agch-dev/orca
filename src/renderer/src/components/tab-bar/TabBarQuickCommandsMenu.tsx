@@ -39,7 +39,7 @@ type TabBarQuickCommandsMenuProps = {
   onEditCommand: (command: TerminalQuickCommand) => void
   onRunCommand: (command: TerminalQuickCommand) => void
 }
-function withShortcutHint(label: string, shortcutLabel: string | null): string {
+export function withShortcutHint(label: string, shortcutLabel: string | null): string {
   return shortcutLabel ? `${label} (${shortcutLabel})` : label
 }
 export function TabBarQuickCommandsMenu({

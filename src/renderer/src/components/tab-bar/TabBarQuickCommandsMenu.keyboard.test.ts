@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { withShortcutHint } from './TabBarQuickCommandsMenu'
 
 // Capture window keydown listeners so tests can fire them directly.
 const windowListeners = vi.hoisted(() => new Map<string, (e: KeyboardEvent) => void>())
@@ -245,5 +246,15 @@ describe('TabBarQuickCommandsMenu keyboard shortcut', () => {
     expect(window.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function), {
       capture: true
     })
+  })
+})
+
+describe('withShortcutHint', () => {
+  it('returns the label unchanged when no shortcut label is provided', () => {
+    expect(withShortcutHint('More quick commands', null)).toBe('More quick commands')
+  })
+
+  it('appends the shortcut label in parentheses when one is provided', () => {
+    expect(withShortcutHint('More quick commands', '⌘⇧Q')).toBe('More quick commands (⌘⇧Q)')
   })
 })

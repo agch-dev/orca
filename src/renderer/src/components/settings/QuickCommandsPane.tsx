@@ -14,6 +14,7 @@ import { getSettingOwnershipSummary } from './setting-ownership'
 import { translate } from '@/i18n/i18n'
 import { QuickCommandsList } from './QuickCommandsList'
 import { GLOBAL_SCOPE_KEY, QuickCommandsScopeFilter } from './QuickCommandsScopeFilter'
+import { useQuickCommandDrag } from './quick-command-drag'
 
 type QuickCommandsPaneProps = {
   settings: GlobalSettings
@@ -76,6 +77,55 @@ export function QuickCommandsPane({
       return effectiveSelection.has(GLOBAL_SCOPE_KEY)
     }
     return effectiveSelection.has(scope.repoId)
+  })
+
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+
+  // hasMixedScopes: visibleCommands spans more than one scope — activates
+  // scope-constrained drag and section headers in the list.
+  // canReorder: in mixed-scope view, drag is scope-constrained, so handles only
+  // appear when at least one scope has multiple commands to reorder.
+  const { hasMixedScopes, canReorder } = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const c of visibleCommands) {
+      const scope = getTerminalQuickCommandScope(c)
+      const key = scope.type === 'global' ? '__global__' : scope.repoId
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    const hasMixed = counts.size > 1
+    const canR = hasMixed ? [...counts.values()].some((n) => n > 1) : visibleCommands.length > 1
+    return { hasMixedScopes: hasMixed, canReorder: canR }
+  }, [visibleCommands])
+
+  const reorderCommand = useCallback(
+    (reordered: TerminalQuickCommand[]): void => {
+      // Why: re-read from the store at commit time so concurrent edits don't
+      // reset commands that changed while dragging. Rebuild from latest store
+      // objects by ID so field edits made during a drag are not overwritten.
+      const latest = useAppStore.getState().settings?.terminalQuickCommands ?? []
+      const latestById = new Map(latest.map((c) => [c.id, c]))
+      const reorderedIds = new Set(reordered.map((c) => c.id))
+      const reorderedFiltered = reordered
+        .map((c) => latestById.get(c.id))
+        .filter((c): c is TerminalQuickCommand => c !== undefined)
+      if (reorderedFiltered.length === 0) {
+        return
+      }
+      // Append any commands added during the drag that were not in the reordered set
+      const addedDuringDrag = latest.filter((c) => !reorderedIds.has(c.id))
+      updateSettings({ terminalQuickCommands: [...reorderedFiltered, ...addedDuringDrag] })
+    },
+    [updateSettings]
+  )
+
+  const { state: dragState, onHandlePointerDown } = useQuickCommandDrag({
+    commands,
+    visibleCommands,
+    // showAll drives scope-constrained drag: apply constraints whenever
+    // multiple scopes are visible (not just when the filter is cleared).
+    showAll: hasMixedScopes,
+    getScrollContainer: useCallback(() => scrollContainerRef.current, []),
+    onReorder: reorderCommand
   })
 
   const createDraftForCurrentFilter = useCallback((): TerminalQuickCommand => {
@@ -206,8 +256,11 @@ export function QuickCommandsPane({
         commands={commands}
         visibleCommands={visibleCommands}
         repoById={repoById}
+        dragState={dragState}
+        scrollContainerRef={scrollContainerRef}
         onEdit={(command) => setEditor({ mode: 'edit', command })}
         onRemove={(command) => void removeCommand(command)}
+        onHandlePointerDown={canReorder ? onHandlePointerDown : undefined}
       />
 
       {editor !== null ? (

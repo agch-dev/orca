@@ -193,16 +193,34 @@ describe('TabBarQuickCommandsMenu keyboard shortcut', () => {
     reactRuntime.index = 0
     const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
     TabBarQuickCommandsMenu(makeProps())
+    reactRuntime.effects[0]()
+
+    keybindingsMock.matchAction.mockReturnValue(true)
+    windowListeners.get('keydown')!(makeKeyEvent())
+    expect(reactRuntime.states[0]).toBe(true)
+
+    // Simulate React re-running the effect after menuOpen changed to true,
+    // so the handler closes over the updated value.
+    reactRuntime.index = 0
+    reactRuntime.effects = []
+    TabBarQuickCommandsMenu(makeProps())
+    reactRuntime.effects[0]()
+
+    windowListeners.get('keydown')!(makeKeyEvent())
+    expect(reactRuntime.states[0]).toBe(false)
+  })
+
+  it('does not toggle when the event is a repeat (key held down)', async () => {
+    reactRuntime.index = 0
+    const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
+    TabBarQuickCommandsMenu(makeProps())
 
     reactRuntime.effects[0]()
 
     keybindingsMock.matchAction.mockReturnValue(true)
     const handler = windowListeners.get('keydown')!
+    handler(makeKeyEvent({ repeat: true }))
 
-    handler(makeKeyEvent())
-    expect(reactRuntime.states[0]).toBe(true)
-
-    handler(makeKeyEvent())
     expect(reactRuntime.states[0]).toBe(false)
   })
 

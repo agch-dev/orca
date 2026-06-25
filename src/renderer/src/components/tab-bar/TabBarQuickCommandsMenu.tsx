@@ -110,33 +110,39 @@ export function TabBarQuickCommandsMenu({
       searchInput.setSelectionRange(end, end)
     })
   }, [cancelFocusFrame])
-  const handleOpenChange = (next: boolean): void => {
-    setMenuOpen(next)
-    if (next) {
+  const handleOpenChange = useCallback(
+    (next: boolean): void => {
+      setMenuOpen(next)
+      if (next) {
+        setCommandValueOverride(null)
+        return
+      }
+      cancelFocusFrame()
+      setQuery('')
       setCommandValueOverride(null)
-      return
-    }
-    cancelFocusFrame()
-    setQuery('')
-    setCommandValueOverride(null)
-  }
+    },
+    [cancelFocusFrame]
+  )
   // Why: this component only mounts while its tab group is focused, so the
   // listener naturally scopes to the active group with no coordination needed.
   useEffect(() => {
     const platform = getShortcutPlatform()
     const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.repeat) {
+        return
+      }
       if (!keybindingMatchesAction('tab.openQuickCommandsMenu', e, platform, keybindings)) {
         return
       }
       e.preventDefault()
       e.stopImmediatePropagation()
-      setMenuOpen((prev) => !prev)
+      handleOpenChange(!menuOpen)
     }
     window.addEventListener('keydown', onKeyDown, { capture: true })
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true })
     }
-  }, [keybindings])
+  }, [handleOpenChange, keybindings, menuOpen])
   useEffect(() => {
     if (!menuOpen || !showSearch) {
       return

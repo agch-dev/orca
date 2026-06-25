@@ -39,9 +39,11 @@ type TabBarQuickCommandsMenuProps = {
   onEditCommand: (command: TerminalQuickCommand) => void
   onRunCommand: (command: TerminalQuickCommand) => void
 }
+/** Appends a keyboard shortcut hint to a label when one is available. */
 export function withShortcutHint(label: string, shortcutLabel: string | null): string {
   return shortcutLabel ? `${label} (${shortcutLabel})` : label
 }
+
 export function TabBarQuickCommandsMenu({
   repoCommands,
   globalCommands,

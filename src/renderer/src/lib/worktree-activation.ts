@@ -44,6 +44,7 @@ import {
   resolveTuiAgentLaunchEnv
 } from '../../../shared/tui-agent-launch-defaults'
 import { isTuiAgent } from '../../../shared/tui-agent-config'
+import { repoIsRemote } from '../../../shared/agent-launch-remote'
 import { resumeSleepingAgentSessionsForWorktree } from '@/lib/resume-sleeping-agent-session'
 import { getLocalProjectExecutionRuntimeContext } from '@/lib/local-preflight-context'
 import {
@@ -248,6 +249,7 @@ function buildCreatedAgentReopenStartup(worktree: Worktree): WorktreeStartupPayl
     agentArgs: resolveTuiAgentLaunchArgs(agent, state.settings?.agentDefaultArgs),
     agentEnv: resolveTuiAgentLaunchEnv(agent, state.settings?.agentDefaultEnv),
     platform: launchPlatform,
+    isRemote: repo ? repoIsRemote(repo) : false,
     allowEmptyPromptLaunch: true
   })
   if (!startupPlan) {

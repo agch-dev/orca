@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parse } from 'yaml'
 
-const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
+const projectDir = resolve(import.meta.dirname, '../..')
 const packageJson = JSON.parse(readFileSync(join(projectDir, 'package.json'), 'utf8'))
 
 describe('Electron runtime package contract', () => {
@@ -67,16 +66,19 @@ describe('Electron runtime package contract', () => {
         release_command
       ])
     )
+    const macReleaseCommand = parsedWorkflow.jobs['build-mac'].steps.find(
+      (step) => step.name === 'Publish release artifacts (macOS)'
+    ).with.command
 
-    expect([...releaseCommands.keys()].sort()).toEqual(['linux-arm64', 'linux-x64', 'mac', 'win'])
-    for (const command of releaseCommands.values()) {
+    expect([...releaseCommands.keys()].sort()).toEqual(['linux-arm64', 'linux-x64', 'win'])
+    for (const command of [...releaseCommands.values(), macReleaseCommand]) {
       expect(command).toContain('node config/scripts/ensure-native-runtime.mjs --runtime=electron')
       expect(command).toContain('electron-builder')
       expect(command.indexOf('ensure-native-runtime')).toBeLessThan(
         command.indexOf('electron-builder')
       )
     }
-    expect(releaseCommands.get('mac')).toContain(' && ORCA_MAC_RELEASE=1 ')
+    expect(macReleaseCommand).toContain(' && ORCA_MAC_RELEASE=1 ')
     expect(releaseCommands.get('linux-x64')).toContain(' && pnpm exec electron-builder ')
     expect(releaseCommands.get('linux-x64')).toContain('--linux AppImage deb rpm --x64')
     expect(releaseCommands.get('linux-arm64')).toContain('ORCA_LINUX_ARM64_RELEASE=1')
@@ -84,6 +86,92 @@ describe('Electron runtime package contract', () => {
     expect(releaseCommands.get('win')).toContain(
       '; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; pnpm exec electron-builder '
     )
+  })
+
+  it('pins the Windows release builder to the VS 2022 runner image', () => {
+    const releaseWorkflow = parse(
+      readFileSync(join(projectDir, '.github/workflows/release-cut.yml'), 'utf8')
+    )
+    const windowsReleaseEntry = releaseWorkflow.jobs.build.strategy.matrix.include.find(
+      ({ platform }) => platform === 'win'
+    )
+
+    expect(windowsReleaseEntry.os).toBe('windows-2022')
+  })
+
+  it('keeps release-cut signing provenance on GitHub-hosted runners', () => {
+    const releaseWorkflow = parse(
+      readFileSync(join(projectDir, '.github/workflows/release-cut.yml'), 'utf8')
+    )
+    const buildMatrixRunners = releaseWorkflow.jobs.build.strategy.matrix.include.map(
+      ({ os }) => os
+    )
+    const releaseWorkflowText = readFileSync(
+      join(projectDir, '.github/workflows/release-cut.yml'),
+      'utf8'
+    )
+
+    expect(releaseWorkflowText).not.toContain('blacksmith-')
+    expect(releaseWorkflow.jobs['build-mac']['runs-on']).toBe('macos-15')
+    expect(buildMatrixRunners).not.toContain('blacksmith-6vcpu-macos-15')
+    expect(releaseWorkflow.jobs['publish-release'].needs).toContain('build')
+    expect(releaseWorkflow.jobs['publish-release'].needs).toContain('build-mac')
+  })
+
+  it('preflights SignPath module install before Windows signing side effects', () => {
+    const releaseWorkflow = readFileSync(
+      join(projectDir, '.github/workflows/release-cut.yml'),
+      'utf8'
+    )
+    const parsedWorkflow = parse(releaseWorkflow)
+    const steps = parsedWorkflow.jobs.build.steps
+    const stepNames = steps.map((step) => step.name)
+    const installStepIndexes = stepNames.flatMap((name, index) =>
+      name === 'Install SignPath PowerShell module' ? [index] : []
+    )
+    const buildIndex = stepNames.indexOf('Build Windows release artifacts')
+    const uploadIndex = stepNames.indexOf('Upload unsigned Windows installer for SignPath')
+    const downloadIndex = stepNames.indexOf('Download signed Windows installer from SignPath')
+
+    expect(installStepIndexes).toEqual([buildIndex + 1])
+    expect(installStepIndexes[0]).toBeLessThan(uploadIndex)
+
+    const uploadThroughDownloadScript = steps
+      .slice(uploadIndex, downloadIndex + 1)
+      .map((step) => step.run ?? '')
+      .join('\n')
+
+    expect(uploadThroughDownloadScript).not.toContain('Install-Module -Name SignPath')
+
+    const installStep = steps[installStepIndexes[0]]
+    const installRun = installStep.run
+    const sleepSeconds = [...installRun.matchAll(/Start-Sleep -Seconds (\d+)/g)].map(
+      ([, seconds]) => seconds
+    )
+
+    expect(installStep.if).toBe("matrix.platform == 'win'")
+    expect(installStep.shell).toBe('pwsh')
+    expect(installRun).toContain('Set-PSRepository -Name PSGallery -InstallationPolicy Trusted')
+    expect(installRun).toMatch(/\$env:PSModulePath -split \[System\.IO\.Path\]::PathSeparator/)
+    expect(installRun).toContain(
+      "$signPathModulePath = Join-Path -Path $currentUserModuleRoot -ChildPath 'SignPath'"
+    )
+    expect(installRun).toMatch(/for \(\$attempt = 1; \$attempt -le 3; \$attempt\+\+\)/)
+    expect(sleepSeconds).toEqual(['15', '30'])
+    expect(installRun).toContain(
+      'Install-Module -Name SignPath -Repository PSGallery -MinimumVersion 4.0.0 -MaximumVersion 4.999.999 -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop'
+    )
+    expect(installRun).toContain('Import-Module SignPath')
+    expect(installRun).toContain(
+      'Get-Command -Name Get-SignedArtifact -Module SignPath -ErrorAction Stop'
+    )
+    expect(installRun).toContain('Remove-Item -LiteralPath $signPathModulePath -Recurse -Force')
+    expect(installRun).not.toContain('SignPath*')
+    expect(installRun.indexOf('if ($attempt -eq 3)')).toBeLessThan(
+      installRun.indexOf('Remove-Item -LiteralPath $signPathModulePath')
+    )
+    expect(installRun).toMatch(/if \(\$attempt -eq 3\) {\s+throw\s+}/)
+    expect(installRun).not.toMatch(/throw\s+\$_/)
   })
 
   it('publishes both Linux release matrix entries', () => {

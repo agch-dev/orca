@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { withShortcutHint } from './TabBarQuickCommandsMenu'
 
 // Capture window keydown listeners so tests can fire them directly.
 const windowListeners = vi.hoisted(() => new Map<string, (e: KeyboardEvent) => void>())
 
 const keybindingsMock = vi.hoisted(() => ({
   matchAction: vi.fn().mockReturnValue(false)
+}))
+
+const appStoreMock = vi.hoisted(() => ({
+  state: {
+    activeView: 'terminal' as 'terminal' | 'settings',
+    keybindings: {} as Record<string, string[]>,
+    settings: {
+      terminalShortcutPolicy: 'orca-first' as 'orca-first' | 'terminal-first'
+    }
+  }
 }))
 
 // Minimal React hook runtime: track useState values and useEffect callbacks.
@@ -54,12 +63,11 @@ vi.mock('@/lib/shortcut-platform', () => ({
 }))
 
 vi.mock('@/store', () => ({
-  useAppStore: (selector: (s: { keybindings: Record<string, string[]> }) => unknown) =>
-    selector({ keybindings: {} })
+  useAppStore: (selector: (s: typeof appStoreMock.state) => unknown) => selector(appStoreMock.state)
 }))
 
 vi.mock('@/hooks/useShortcutLabel', () => ({
-  useOptionalShortcutLabel: () => null
+  useShortcutKeyComboDetails: () => []
 }))
 
 vi.mock('@/lib/terminal-quick-command-search', () => ({
@@ -91,7 +99,8 @@ vi.mock('@/i18n/i18n', () => ({
 
 vi.mock('lucide-react', () => ({
   ChevronDown: () => null,
-  Play: () => null
+  Play: () => null,
+  Plus: () => null
 }))
 
 vi.mock('@/components/ui/command', () => ({
@@ -145,7 +154,11 @@ beforeEach(() => {
   reactRuntime.index = 0
   reactRuntime.effects = []
   windowListeners.clear()
+  keybindingsMock.matchAction.mockClear()
   keybindingsMock.matchAction.mockReturnValue(false)
+  appStoreMock.state.activeView = 'terminal'
+  appStoreMock.state.keybindings = {}
+  appStoreMock.state.settings.terminalShortcutPolicy = 'orca-first'
   vi.stubGlobal('window', {
     addEventListener: vi.fn((type: string, handler: (e: KeyboardEvent) => void) => {
       windowListeners.set(type, handler)
@@ -169,6 +182,25 @@ describe('TabBarQuickCommandsMenu keyboard shortcut', () => {
     reactRuntime.effects[0]()
 
     expect(window.addEventListener).toHaveBeenCalledWith('keydown', expect.any(Function), {
+      capture: true
+    })
+    expect(window.addEventListener).toHaveBeenCalledWith('keyup', expect.any(Function), {
+      capture: true
+    })
+  })
+
+  it('does not register keyboard listeners while the terminal workbench is hidden', async () => {
+    appStoreMock.state.activeView = 'settings'
+    reactRuntime.index = 0
+    const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
+    TabBarQuickCommandsMenu(makeProps())
+
+    reactRuntime.effects[0]()
+
+    expect(window.addEventListener).not.toHaveBeenCalledWith('keydown', expect.any(Function), {
+      capture: true
+    })
+    expect(window.addEventListener).not.toHaveBeenCalledWith('keyup', expect.any(Function), {
       capture: true
     })
   })
@@ -253,6 +285,88 @@ describe('TabBarQuickCommandsMenu keyboard shortcut', () => {
     expect(event.stopImmediatePropagation).toHaveBeenCalled()
   })
 
+  it('passes terminal context and terminal-first policy to shortcut matching', async () => {
+    appStoreMock.state.settings.terminalShortcutPolicy = 'terminal-first'
+    reactRuntime.index = 0
+    const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
+    TabBarQuickCommandsMenu(makeProps())
+
+    reactRuntime.effects[0]()
+
+    const terminalTarget = {
+      classList: { contains: (className: string) => className === 'xterm-helper-textarea' },
+      closest: () => null
+    } as unknown as EventTarget
+    const handler = windowListeners.get('keydown')!
+    handler(makeKeyEvent({ target: terminalTarget }))
+
+    expect(keybindingsMock.matchAction).toHaveBeenCalledWith(
+      'tab.openQuickCommandsMenu',
+      expect.objectContaining({ key: 'q', code: 'KeyQ' }),
+      'darwin',
+      appStoreMock.state.keybindings,
+      { context: 'terminal', terminalShortcutPolicy: 'terminal-first' }
+    )
+    expect(reactRuntime.states[0]).toBe(false)
+  })
+
+  it('ignores shortcut presses while the shortcut recorder is active', async () => {
+    reactRuntime.index = 0
+    const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
+    TabBarQuickCommandsMenu(makeProps())
+
+    reactRuntime.effects[0]()
+
+    const recorderTarget = {
+      closest: (selector: string) => (selector === '[data-shortcut-recorder-active]' ? {} : null)
+    } as unknown as EventTarget
+    const handler = windowListeners.get('keydown')!
+    handler(makeKeyEvent({ target: recorderTarget }))
+
+    expect(keybindingsMock.matchAction).not.toHaveBeenCalled()
+    expect(reactRuntime.states[0]).toBe(false)
+  })
+
+  it('toggles from a matching double-tap binding in the renderer path', async () => {
+    reactRuntime.index = 0
+    const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
+    TabBarQuickCommandsMenu(makeProps())
+
+    reactRuntime.effects[0]()
+
+    keybindingsMock.matchAction.mockImplementation(
+      (_actionId, input: { doubleTapModifier?: string }) => input.doubleTapModifier === 'Shift'
+    )
+    const keyDown = windowListeners.get('keydown')!
+    const keyUp = windowListeners.get('keyup')!
+    const firstDown = makeKeyEvent({
+      key: 'Shift',
+      code: 'ShiftLeft',
+      metaKey: false,
+      shiftKey: true
+    })
+    const firstUp = makeKeyEvent({
+      key: 'Shift',
+      code: 'ShiftLeft',
+      metaKey: false,
+      shiftKey: true
+    })
+    const secondDown = makeKeyEvent({
+      key: 'Shift',
+      code: 'ShiftLeft',
+      metaKey: false,
+      shiftKey: true
+    })
+
+    keyDown(firstDown)
+    keyUp(firstUp)
+    keyDown(secondDown)
+
+    expect(reactRuntime.states[0]).toBe(true)
+    expect(secondDown.preventDefault).toHaveBeenCalled()
+    expect(secondDown.stopImmediatePropagation).toHaveBeenCalled()
+  })
+
   it('removes the listener when the effect is cleaned up', async () => {
     reactRuntime.index = 0
     const { TabBarQuickCommandsMenu } = await import('./TabBarQuickCommandsMenu')
@@ -264,15 +378,8 @@ describe('TabBarQuickCommandsMenu keyboard shortcut', () => {
     expect(window.removeEventListener).toHaveBeenCalledWith('keydown', expect.any(Function), {
       capture: true
     })
-  })
-})
-
-describe('withShortcutHint', () => {
-  it('returns the label unchanged when no shortcut label is provided', () => {
-    expect(withShortcutHint('More quick commands', null)).toBe('More quick commands')
-  })
-
-  it('appends the shortcut label in parentheses when one is provided', () => {
-    expect(withShortcutHint('More quick commands', '⌘⇧Q')).toBe('More quick commands (⌘⇧Q)')
+    expect(window.removeEventListener).toHaveBeenCalledWith('keyup', expect.any(Function), {
+      capture: true
+    })
   })
 })

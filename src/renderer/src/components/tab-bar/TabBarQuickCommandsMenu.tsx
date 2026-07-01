@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ShortcutKeyCombo } from '@/components/ShortcutKeyCombo'
 import {
   getTerminalQuickCommandBody,
   isTerminalAgentQuickCommand
@@ -26,10 +27,8 @@ import {
   getTerminalQuickCommandPickerValue,
   searchTerminalQuickCommands
 } from '@/lib/terminal-quick-command-search'
-import { keybindingMatchesAction } from '../../../../shared/keybindings'
-import { getShortcutPlatform } from '@/lib/shortcut-platform'
-import { useAppStore } from '@/store'
-import { useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
+import { useShortcutKeyComboDetails } from '@/hooks/useShortcutLabel'
+import { useTabBarQuickCommandsShortcut } from './tab-bar-quick-commands-shortcut'
 type TabBarQuickCommandsMenuProps = {
   repoCommands: readonly TerminalQuickCommand[]
   globalCommands: readonly TerminalQuickCommand[]
@@ -38,10 +37,6 @@ type TabBarQuickCommandsMenuProps = {
   onDeleteCommand: (command: TerminalQuickCommand) => void
   onEditCommand: (command: TerminalQuickCommand) => void
   onRunCommand: (command: TerminalQuickCommand) => void
-}
-/** Appends a keyboard shortcut hint to a label when one is available. */
-export function withShortcutHint(label: string, shortcutLabel: string | null): string {
-  return shortcutLabel ? `${label} (${shortcutLabel})` : label
 }
 
 export function TabBarQuickCommandsMenu({
@@ -53,14 +48,17 @@ export function TabBarQuickCommandsMenu({
   onEditCommand,
   onRunCommand
 }: TabBarQuickCommandsMenuProps): React.JSX.Element {
-  const keybindings = useAppStore((s) => s.keybindings)
-  const openMenuShortcutLabel = useOptionalShortcutLabel('tab.openQuickCommandsMenu')
+  const openMenuShortcutCombos = useShortcutKeyComboDetails('tab.openQuickCommandsMenu')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [moreCommandsTooltipOpen, setMoreCommandsTooltipOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [commandValueOverride, setCommandValueOverride] = useState<string | null>(null)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
   const commandListRef = useRef<HTMLDivElement | null>(null)
   const focusFrameRef = useRef<number | null>(null)
+  // Why: closing restores focus to the chevron for accessibility, but that
+  // focus restoration should not immediately reopen its tooltip.
+  const suppressMoreCommandsTooltipRef = useRef(false)
   const totalVisible = repoCommands.length + globalCommands.length
   const showSearch = totalVisible > 1
   const filteredRepoCommands = useMemo(
@@ -112,39 +110,36 @@ export function TabBarQuickCommandsMenu({
       searchInput.setSelectionRange(end, end)
     })
   }, [cancelFocusFrame])
+  const handleMoreCommandsTooltipOpenChange = useCallback((next: boolean): void => {
+    if (next && suppressMoreCommandsTooltipRef.current) {
+      return
+    }
+    setMoreCommandsTooltipOpen(next)
+  }, [])
+  const allowMoreCommandsTooltip = useCallback((): void => {
+    suppressMoreCommandsTooltipRef.current = false
+  }, [])
   const handleOpenChange = useCallback(
     (next: boolean): void => {
       setMenuOpen(next)
       if (next) {
+        suppressMoreCommandsTooltipRef.current = false
+        setMoreCommandsTooltipOpen(false)
         setCommandValueOverride(null)
         return
       }
+      suppressMoreCommandsTooltipRef.current = true
+      setMoreCommandsTooltipOpen(false)
       cancelFocusFrame()
       setQuery('')
       setCommandValueOverride(null)
     },
     [cancelFocusFrame]
   )
-  // Why: this component only mounts while its tab group is focused, so the
-  // listener naturally scopes to the active group with no coordination needed.
-  useEffect(() => {
-    const platform = getShortcutPlatform()
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.repeat) {
-        return
-      }
-      if (!keybindingMatchesAction('tab.openQuickCommandsMenu', e, platform, keybindings)) {
-        return
-      }
-      e.preventDefault()
-      e.stopImmediatePropagation()
-      handleOpenChange(!menuOpen)
-    }
-    window.addEventListener('keydown', onKeyDown, { capture: true })
-    return () => {
-      window.removeEventListener('keydown', onKeyDown, { capture: true })
-    }
-  }, [handleOpenChange, keybindings, menuOpen])
+  const closeMenu = useCallback((): void => {
+    handleOpenChange(false)
+  }, [handleOpenChange])
+  useTabBarQuickCommandsShortcut({ menuOpen, onOpenChange: handleOpenChange })
   useEffect(() => {
     if (!menuOpen || !showSearch) {
       return
@@ -156,10 +151,10 @@ export function TabBarQuickCommandsMenu({
   }, [cancelFocusFrame, focusSearchInput, menuOpen, showSearch])
   const runAndClose = useCallback(
     (command: TerminalQuickCommand): void => {
-      setMenuOpen(false)
+      closeMenu()
       onRunCommand(command)
     },
-    [onRunCommand]
+    [closeMenu, onRunCommand]
   )
   const handleSearchKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -264,7 +259,7 @@ export function TabBarQuickCommandsMenu({
         </TooltipContent>
       </Tooltip>
       <DropdownMenu modal={false} open={menuOpen} onOpenChange={handleOpenChange}>
-        <Tooltip>
+        <Tooltip open={moreCommandsTooltipOpen} onOpenChange={handleMoreCommandsTooltipOpenChange}>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <button
@@ -274,13 +269,27 @@ export function TabBarQuickCommandsMenu({
                   'justify-center rounded-l-none rounded-r-md border-l border-border/60 px-1'
                 )}
                 aria-label={moreCommandsLabel}
+                onPointerEnter={allowMoreCommandsTooltip}
+                onBlur={allowMoreCommandsTooltip}
               >
                 <ChevronDown className="size-3" strokeWidth={2.5} />
               </button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom" sideOffset={6}>
-            {withShortcutHint(moreCommandsLabel, openMenuShortcutLabel)}
+            <span className="inline-flex items-center gap-1.5">
+              <span>{moreCommandsLabel}</span>
+              {openMenuShortcutCombos.map((shortcut, index) => (
+                <ShortcutKeyCombo
+                  key={`${shortcut.keys.join('-')}-${index}`}
+                  keys={shortcut.keys}
+                  doubleTap={shortcut.doubleTap}
+                  className="gap-0.5"
+                  keyCapClassName="min-w-0 border-background/30 bg-background/10 px-1 py-0 text-[10px] text-background shadow-none"
+                  separatorClassName="mx-0 text-[10px] text-background/70"
+                />
+              ))}
+            </span>
           </TooltipContent>
         </Tooltip>
         <DropdownMenuContent
@@ -288,9 +297,6 @@ export function TabBarQuickCommandsMenu({
           side="bottom"
           sideOffset={6}
           className="w-72 p-0"
-          // Why: prevent Radix from returning focus to the chevron trigger on
-          // close, which would surface the tooltip unintentionally.
-          onCloseAutoFocus={(e) => e.preventDefault()}
           onKeyDown={(event) => {
             if (event.key !== 'Enter' || showSearch || filteredVisibleCommands.length !== 1) {
               return
@@ -347,11 +353,11 @@ export function TabBarQuickCommandsMenu({
                   command={command}
                   onRun={() => runAndClose(command)}
                   onEdit={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onEditCommand(command)
                   }}
                   onDelete={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onDeleteCommand(command)
                   }}
                 />
@@ -365,11 +371,11 @@ export function TabBarQuickCommandsMenu({
                   command={command}
                   onRun={() => runAndClose(command)}
                   onEdit={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onEditCommand(command)
                   }}
                   onDelete={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onDeleteCommand(command)
                   }}
                 />
@@ -379,7 +385,7 @@ export function TabBarQuickCommandsMenu({
               <button
                 type="button"
                 onClick={() => {
-                  setMenuOpen(false)
+                  closeMenu()
                   onAddCommand()
                 }}
                 className="flex w-full items-center gap-2 rounded-[5px] px-2 py-1.5 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"

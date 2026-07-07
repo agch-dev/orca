@@ -1840,7 +1840,9 @@ function buildWorktreePurgeState(s: AppState, worktreeIds: string[]): Partial<Ap
   for (const id of worktreeIdSet) {
     for (const tab of s.tabsByWorktree[id] ?? []) {
       doomedTabIds.add(tab.id)
-      for (const ptyId of s.ptyIdsByTabId[tab.id] ?? []) {
+      // Null-tolerant like the omit* helpers below: some callers pass partial
+      // state that omits this slice; the production store always inits it to {}.
+      for (const ptyId of s.ptyIdsByTabId?.[tab.id] ?? []) {
         doomedPtyIds.add(ptyId)
       }
       // Why: a removed worktree's panes are gone for good, so drop their

@@ -257,7 +257,7 @@ function parseRemoteCliArgs(argv: string[]): ParsedRemoteCli {
 
     const flag = assignment
     const next = argv[i + 1]
-    if (!REMOTE_BOOLEAN_FLAGS.has(flag) && next && !next.startsWith('--')) {
+    if (!isRemoteBooleanFlag(flag, commandPath) && next && !next.startsWith('--')) {
       setRemoteFlag(flags, flag, next)
       i += 1
     } else {
@@ -265,6 +265,14 @@ function parseRemoteCliArgs(argv: string[]): ParsedRemoteCli {
     }
   }
   return { commandPath, flags }
+}
+
+function isRemoteBooleanFlag(flag: string, commandPath: string[]): boolean {
+  // Why: Android launch already uses --activity <name>; only Linear issue reads use it as a boolean.
+  return (
+    REMOTE_BOOLEAN_FLAGS.has(flag) ||
+    (flag === 'activity' && commandPath[0] === 'linear' && commandPath[1] === 'issue')
+  )
 }
 
 function setRemoteFlag(
